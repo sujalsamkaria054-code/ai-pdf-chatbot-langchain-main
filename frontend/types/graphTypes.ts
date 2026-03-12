@@ -1,34 +1,5 @@
 import { Document } from '@langchain/core/documents';
 
-/**
- * Represents the state of the retrieval graph / agent.
- */
-export type documentType =
-  | PDFDocument[]
-  | { [key: string]: any }[]
-  | string[]
-  | string
-  | 'delete';
-
-export interface AgentState {
-  query?: string;
-  route?: string;
-  messages: Array<{
-    content: string;
-    additional_kwargs: Record<string, any>;
-    response_metadata: Record<string, any>;
-    id: string;
-    type: 'human' | 'assistant';
-  }>;
-  documents: documentType;
-}
-
-export interface RetrieveDocumentsNodeUpdates {
-  retrieveDocuments: {
-    documents: documentType;
-  };
-}
-
 export type PDFDocument = Document & {
   metadata?: {
     loc?: {
@@ -54,8 +25,69 @@ export type PDFDocument = Document & {
     };
     uuid?: string;
     source?: string;
+    filename?: string;
   };
 };
+
+export type SourceAttribution = {
+  source?: string;
+  filename?: string;
+  page?: number;
+};
+
+export type ChartData = {
+  chartType: 'bar' | 'line' | 'pie';
+  title: string;
+  labels: string[];
+  datasets: Array<{
+    label: string;
+    data: number[];
+  }>;
+};
+
+export type ReportData = {
+  title: string;
+  summary: string;
+  sections: Array<{
+    heading: string;
+    body: string;
+  }>;
+  conclusion: string;
+};
+
+export type RetrievalResponse =
+  | {
+      type: 'normal_answer';
+      content: string;
+      sources: SourceAttribution[];
+    }
+  | {
+      type: 'chart';
+      chart: ChartData;
+      content: string;
+      sources: SourceAttribution[];
+    }
+  | {
+      type: 'report';
+      report: ReportData;
+      sources: SourceAttribution[];
+    }
+  | {
+      type: 'report_with_chart';
+      report: ReportData;
+      chart: ChartData;
+      sources: SourceAttribution[];
+    };
+
+export type ChatApiResponse =
+  | {
+      route: 'direct';
+      response: string;
+    }
+  | {
+      route: 'retrieve';
+      response: RetrievalResponse;
+    };
 
 export interface BaseConfiguration {
   retrieverProvider?: 'supabase';
@@ -71,49 +103,3 @@ export interface IndexConfiguration extends BaseConfiguration {
   docsFile?: string;
   useSampleDocs?: boolean;
 }
-
-/* =========================
-   NEW TYPES FOR UI RESPONSE
-========================= */
-
-export type ChartSeries = {
-  name: string;
-  data: number[];
-};
-
-export type ChartData = {
-  type: 'bar' | 'line' | 'pie';
-  title?: string;
-  labels: string[];
-  series: ChartSeries[];
-};
-
-export type ResponseBlock =
-  | {
-      type: 'heading';
-      text: string;
-    }
-  | {
-      type: 'paragraph';
-      text: string;
-    }
-  | {
-      type: 'bullets';
-      items: string[];
-    }
-  | {
-      type: 'chart';
-      chart: ChartData;
-    };
-
-export type StructuredAssistantResponse = {
-  kind:
-    | 'text_answer'
-    | 'report'
-    | 'chart_only'
-    | 'report_with_chart'
-    | 'not_found';
-  title?: string;
-  message?: string;
-  blocks: ResponseBlock[];
-};

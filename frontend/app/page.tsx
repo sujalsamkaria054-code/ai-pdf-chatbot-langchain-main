@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -10,17 +10,14 @@ import { Paperclip, ArrowUp, Loader2 } from 'lucide-react';
 import { ExamplePrompts } from '@/components/example-prompts';
 import { ChatMessage } from '@/components/chat-message';
 import { FilePreview } from '@/components/file-preview';
-import { client } from '@/lib/langgraph-client';
-import {
-  PDFDocument,
-  RetrieveDocumentsNodeUpdates,
-} from '@/types/graphTypes';
+import { ChatApiResponse, RetrievalResponse, SourceAttribution } from '@/types/graphTypes';
 
 type UIMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  sources?: PDFDocument[];
+  structured?: RetrievalResponse;
+  sources?: SourceAttribution[];
 };
 
 export default function Home() {
@@ -31,322 +28,65 @@ export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [threadId, setThreadId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastRetrievedDocsRef = useRef<PDFDocument[]>([]);
-  const activeRunIdRef = useRef<string | null>(null);
-  const activeAssistantMessageIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const initThread = async () => {
-      if (threadId) return;
-
-      try {
-        const thread = await client.createThread();
-        setThreadId(thread.thread_id);
-      } catch (error) {
-        console.error('Error creating thread:', error);
-        toast({
-          title: 'Error',
-          description:
-            'Error creating thread. Please make sure LANGGRAPH_API_URL is set correctly. ' +
-            error,
-          variant: 'destructive',
-        });
-      }
-    };
-
-    initThread();
-  }, [threadId, toast]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const makeId = () =>
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  const updateAssistantMessageById = (
-    messageId: string,
-    content: string,
-    sources: PDFDocument[] = lastRetrievedDocsRef.current,
-  ) => {
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId
-          ? {
-              ...msg,
-              content,
-              sources,
-            }
-          : msg,
-      ),
-    );
-  };
-
-  const extractTextContent = (content: unknown): string => {
-    if (typeof content === 'string') {
-      return content;
-    }
-
-    if (Array.isArray(content)) {
-      return content
-        .map((item: any) => {
-          if (typeof item === 'string') return item;
-          if (item?.text) return item.text;
-          return '';
-        })
-        .join('');
-    }
-
-    if (content != null) {
-      return String(content);
-    }
-
-    return '';
-  };
-
-  const isActiveRunEvent = (data: any) => {
-    if (!activeRunIdRef.current) return true;
-
-    if (Array.isArray(data)) {
-      const runIds = data
-        .map((item) => item?.response_metadata?.run_id || item?.run_id)
-        .filter(Boolean);
-
-      if (runIds.length === 0) return true;
-
-      return runIds.includes(activeRunIdRef.current);
-    }
-
-    if (data && typeof data === 'object') {
-      const runId = data.run_id;
-      if (!runId) return true;
-      return runId === activeRunIdRef.current;
-    }
-
-    return true;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!input.trim() || !threadId || isLoading) return;
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
-    const userMessageId = makeId();
-    const assistantMessageId = makeId();
-
-    activeAssistantMessageIdRef.current = assistantMessageId;
+    setInput('');
+    setIsLoading(true);
 
     setMessages((prev) => [
       ...prev,
-      { id: userMessageId, role: 'user', content: userMessage },
-      {
-        id: assistantMessageId,
-        role: 'assistant',
-        content: '',
-        sources: undefined,
-      },
+      { id: makeId(), role: 'user', content: userMessage },
     ]);
-
-    setInput('');
-    setIsLoading(true);
-    lastRetrievedDocsRef.current = [];
-    activeRunIdRef.current = null;
-
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          threadId,
-        }),
-        signal: abortController.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMessage }),
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No reader available');
-      }
+      const data = (await response.json()) as ChatApiResponse;
 
-      const decoder = new TextDecoder();
-      let bufferedText = '';
+      if (data.route === 'direct') {
+        setMessages((prev) => [
+          ...prev,
+          { id: makeId(), role: 'assistant', content: data.response },
+        ]);
+      } else {
+        const structured = data.response;
+        const content =
+          structured.type === 'normal_answer' || structured.type === 'chart'
+            ? structured.content
+            : structured.report.summary;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        bufferedText += decoder.decode(value, { stream: true });
-
-        const lines = bufferedText.split('\n');
-        bufferedText = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-
-          const sseString = line.slice('data: '.length).trim();
-          if (!sseString) continue;
-
-          let sseEvent: any;
-          try {
-            sseEvent = JSON.parse(sseString);
-          } catch (err) {
-            console.error('Error parsing SSE line:', err, line);
-            continue;
-          }
-
-          const { event, data } = sseEvent;
-
-          console.log('SSE EVENT:', event);
-          console.log('SSE DATA:', data);
-
-          if (event === 'metadata' && data?.run_id) {
-            activeRunIdRef.current = data.run_id;
-            console.log('ACTIVE RUN ID SET:', activeRunIdRef.current);
-            continue;
-          }
-
-          if (event === 'messages/partial') {
-            if (!isActiveRunEvent(data)) {
-              console.log('Ignoring stale partial event');
-              continue;
-            }
-
-            if (Array.isArray(data) && data.length > 0) {
-              const lastObj = data[data.length - 1];
-              const textContent = extractTextContent(lastObj?.content);
-
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
-                updateAssistantMessageById(
-                  activeAssistantMessageIdRef.current,
-                  textContent,
-                );
-              }
-            }
-          } else if (event === 'updates' && data) {
-            if (!isActiveRunEvent(data)) {
-              console.log('Ignoring stale updates event');
-              continue;
-            }
-
-            if (
-              typeof data === 'object' &&
-              data !== null &&
-              'retrieveDocuments' in data &&
-              (data as any).retrieveDocuments &&
-              Array.isArray((data as any).retrieveDocuments.documents)
-            ) {
-              const retrievedDocs = (data as RetrieveDocumentsNodeUpdates)
-                .retrieveDocuments.documents as PDFDocument[];
-
-              lastRetrievedDocsRef.current = retrievedDocs;
-              console.log('Retrieved documents:', retrievedDocs);
-            }
-
-            if (
-              typeof data === 'object' &&
-              data !== null &&
-              'directAnswer' in data &&
-              (data as any).directAnswer &&
-              Array.isArray((data as any).directAnswer.messages) &&
-              (data as any).directAnswer.messages.length > 0
-            ) {
-              const lastMessage =
-                (data as any).directAnswer.messages[
-                  (data as any).directAnswer.messages.length - 1
-                ];
-
-              const textContent = extractTextContent(lastMessage?.content);
-
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
-                updateAssistantMessageById(
-                  activeAssistantMessageIdRef.current,
-                  textContent,
-                  [],
-                );
-              }
-            }
-
-            if (
-              typeof data === 'object' &&
-              data !== null &&
-              'generateResponse' in data &&
-              (data as any).generateResponse &&
-              Array.isArray((data as any).generateResponse.messages) &&
-              (data as any).generateResponse.messages.length > 0
-            ) {
-              const lastMessage =
-                (data as any).generateResponse.messages[
-                  (data as any).generateResponse.messages.length - 1
-                ];
-
-              const textContent = extractTextContent(lastMessage?.content);
-
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
-                updateAssistantMessageById(
-                  activeAssistantMessageIdRef.current,
-                  textContent,
-                  lastRetrievedDocsRef.current,
-                );
-              }
-            }
-          } else if (event === 'messages/complete') {
-            if (!isActiveRunEvent(data)) {
-              console.log('Ignoring stale complete event');
-              continue;
-            }
-
-            if (Array.isArray(data) && data.length > 0) {
-              const lastObj = data[data.length - 1];
-              const textContent = extractTextContent(lastObj?.content);
-
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
-                updateAssistantMessageById(
-                  activeAssistantMessageIdRef.current,
-                  textContent,
-                );
-              }
-            }
-          } else {
-            console.log('Unknown SSE event:', event, data);
-          }
-        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId(),
+            role: 'assistant',
+            content,
+            structured,
+            sources: structured.sources,
+          },
+        ]);
       }
     } catch (error) {
       console.error('Error sending message:', error);
-
       toast({
         title: 'Error',
         description:
@@ -354,19 +94,8 @@ export default function Home() {
           (error instanceof Error ? error.message : 'Unknown error'),
         variant: 'destructive',
       });
-
-      if (activeAssistantMessageIdRef.current) {
-        updateAssistantMessageById(
-          activeAssistantMessageIdRef.current,
-          'Sorry, there was an error processing your message.',
-          [],
-        );
-      }
     } finally {
       setIsLoading(false);
-      abortControllerRef.current = null;
-      activeRunIdRef.current = null;
-      activeAssistantMessageIdRef.current = null;
     }
   };
 
@@ -374,9 +103,7 @@ export default function Home() {
     const selectedFiles = Array.from(e.target.files || []);
     if (selectedFiles.length === 0) return;
 
-    const nonPdfFiles = selectedFiles.filter(
-      (file) => file.type !== 'application/pdf',
-    );
+    const nonPdfFiles = selectedFiles.filter((file) => file.type !== 'application/pdf');
 
     if (nonPdfFiles.length > 0) {
       toast({
@@ -409,9 +136,7 @@ export default function Home() {
 
       toast({
         title: 'Success',
-        description: `${selectedFiles.length} file${
-          selectedFiles.length > 1 ? 's' : ''
-        } uploaded successfully`,
+        description: `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} uploaded successfully`,
         variant: 'default',
       });
     } catch (error) {
@@ -435,7 +160,6 @@ export default function Home() {
 
   const handleRemoveFile = (fileToRemove: File) => {
     setFiles((prev) => prev.filter((file) => file !== fileToRemove));
-
     toast({
       title: 'File removed',
       description: `${fileToRemove.name} has been removed`,
@@ -450,14 +174,7 @@ export default function Home() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <p className="font-medium text-muted-foreground max-w-md mx-auto">
-                This AI chatbot is an example template to accompany the book:{' '}
-                <a
-                  href="https://www.oreilly.com/library/view/learning-langchain/9781098167271/"
-                  className="underline hover:text-foreground"
-                >
-                  Learning LangChain (O&apos;Reilly): Building AI and LLM
-                  applications with LangChain and LangGraph
-                </a>
+                Upload PDFs and ask questions. The assistant routes each request to direct answer or document retrieval.
               </p>
             </div>
           </div>
@@ -469,7 +186,6 @@ export default function Home() {
           {messages.map((message) => (
             <ChatMessage key={message.id} message={message} />
           ))}
-          <div ref={messagesEndRef} />
         </div>
       )}
 
@@ -478,11 +194,7 @@ export default function Home() {
           {files.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
               {files.map((file, index) => (
-                <FilePreview
-                  key={`${file.name}-${index}`}
-                  file={file}
-                  onRemove={() => handleRemoveFile(file)}
-                />
+                <FilePreview key={`${file.name}-${index}`} file={file} onRemove={() => handleRemoveFile(file)} />
               ))}
             </div>
           )}
@@ -518,26 +230,13 @@ export default function Home() {
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  isUploading ? 'Uploading PDF...' : 'Send a message...'
-                }
+                placeholder={isUploading ? 'Uploading PDF...' : 'Send a message...'}
                 className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 h-12 bg-transparent"
-                disabled={isUploading || isLoading || !threadId}
+                disabled={isUploading || isLoading}
               />
 
-              <Button
-                type="submit"
-                size="icon"
-                className="rounded-none h-12"
-                disabled={
-                  !input.trim() || isUploading || isLoading || !threadId
-                }
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="h-4 w-4" />
-                )}
+              <Button type="submit" size="icon" className="rounded-none h-12" disabled={!input.trim() || isUploading || isLoading}>
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
               </Button>
             </div>
           </form>
