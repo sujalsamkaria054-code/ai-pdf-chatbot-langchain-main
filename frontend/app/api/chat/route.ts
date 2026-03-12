@@ -6,7 +6,7 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    const { message, threadId } = await req.json();
+    const { message, threadId, uploadedDocuments } = await req.json();
 
     if (!message) {
       return new NextResponse(
@@ -45,7 +45,12 @@ export async function POST(req: Request) {
         threadId,
         assistantId,
         {
-          input: { query: message },
+          input: {
+            query: message,
+            uploadedDocuments: Array.isArray(uploadedDocuments)
+              ? uploadedDocuments
+              : [],
+          },
           streamMode: ['messages', 'updates'],
           config: {
             configurable: {
