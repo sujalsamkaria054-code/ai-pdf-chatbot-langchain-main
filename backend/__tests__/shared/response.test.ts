@@ -2,10 +2,12 @@ import {
   assistantResponseSchema,
   DEFAULT_USER_PREFERENCES,
   getPreferredKindForIntent,
+  normalizeIntent,
   normalizePreferences,
+  normalizeResponse,
   notFoundResponse,
-  userPreferencesSchema,
   responseIntentSchema,
+  userPreferencesSchema,
 } from '../../src/shared/response.js';
 
 describe('assistantResponseSchema', () => {
@@ -113,5 +115,43 @@ describe('userPreferencesSchema', () => {
     );
 
     expect(normalized).toEqual(DEFAULT_USER_PREFERENCES);
+  });
+});
+
+describe('normalizeIntent', () => {
+  it('maps malformed/unknown values to unknown', () => {
+    expect(normalizeIntent('garbage')).toBe('unknown');
+    expect(normalizeIntent(undefined)).toBe('unknown');
+  });
+
+  it('maps known intent aliases', () => {
+    expect(normalizeIntent('chart')).toBe('chart_only');
+    expect(normalizeIntent('report')).toBe('report_only');
+    expect(normalizeIntent('direct')).toBe('direct_answer');
+  });
+});
+
+describe('normalizeResponse', () => {
+  it('produces chart output for chart kind', () => {
+    const normalized = normalizeResponse(
+      assistantResponseSchema.parse({
+        kind: 'chart',
+        title: 'Chart',
+        message: 'Visual summary',
+        blocks: [
+          {
+            type: 'chart',
+            chart: {
+              type: 'bar',
+              title: 'Sales',
+              labels: ['Jan', 'Feb'],
+              series: [{ name: 'Revenue', data: [10, 20] }],
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(normalized.type).toBe('chart');
   });
 });

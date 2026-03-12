@@ -60,6 +60,71 @@ export const assistantResponseSchema = z
   })
   .strict();
 
+export const normalizedAssistantResponseSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('text'),
+      content: z.string(),
+      sources: z.array(z.string()).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('chart'),
+      summary: z.string().optional(),
+      chart: z
+        .object({
+          chartType: z.enum(['bar', 'line', 'pie']),
+          title: z.string(),
+          labels: z.array(z.string()),
+          values: z.array(z.number()),
+        })
+        .strict(),
+      sources: z.array(z.string()).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('report'),
+      report: z
+        .object({
+          title: z.string(),
+          summary: z.string(),
+          insights: z.array(z.string()),
+          conclusion: z.string(),
+          recommendations: z.array(z.string()).optional(),
+          tables: z.array(z.any()).optional(),
+        })
+        .strict(),
+      sources: z.array(z.string()).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('report_with_chart'),
+      report: z
+        .object({
+          title: z.string(),
+          summary: z.string(),
+          insights: z.array(z.string()),
+          conclusion: z.string(),
+          recommendations: z.array(z.string()).optional(),
+          tables: z.array(z.any()).optional(),
+        })
+        .strict(),
+      chart: z
+        .object({
+          chartType: z.enum(['bar', 'line', 'pie']),
+          title: z.string(),
+          labels: z.array(z.string()),
+          values: z.array(z.number()),
+        })
+        .strict(),
+      sources: z.array(z.string()).optional(),
+    })
+    .strict(),
+]);
+
 export const responseIntentSchema = z.enum([
   'summary',
   'detailed_report',
@@ -71,6 +136,16 @@ export const responseIntentSchema = z.enum([
   'report_with_chart',
   'table',
   'general',
+]);
+
+export const agentIntentSchema = z.enum([
+  'direct_answer',
+  'document_summary',
+  'chart_only',
+  'report_only',
+  'report_with_chart',
+  'comparison',
+  'unknown',
 ]);
 
 export const chartTypePreferenceSchema = z.enum(['bar', 'line', 'pie', 'auto']);
@@ -119,8 +194,12 @@ export const normalizedUserPreferencesSchema = z
   })
   .strict();
 
-export type AssistantResponse = z.infer<typeof assistantResponseSchema>;
+export type AssistantResponse = z.output<typeof assistantResponseSchema>;
+export type NormalizedAssistantResponse = z.infer<
+  typeof normalizedAssistantResponseSchema
+>;
 export type ResponseIntent = z.infer<typeof responseIntentSchema>;
+export type AgentIntent = z.infer<typeof agentIntentSchema>;
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
 export type NormalizedUserPreferences = z.infer<
   typeof normalizedUserPreferencesSchema
@@ -130,7 +209,7 @@ export const DEFAULT_USER_PREFERENCES: NormalizedUserPreferences = {
   chartType: 'auto',
   reportDepth: 'standard',
   reportStyle: 'neutral',
-  focusArea: 'general',
+  focusArea: '',
   includeRecommendations: false,
   includeCharts: false,
   includeTables: false,
@@ -165,6 +244,86 @@ export function getPreferredKindForIntent(
   if (intent === 'comparison') return 'mixed';
   if (intent === 'detailed_report' || intent === 'table') return 'report';
   return 'text';
+}
+
+export function normalizeIntent(raw?: string): AgentIntent {
+  if (!raw) return 'unknown';
+  const value = raw.toLowerCase().trim();
+
+  if (value === 'direct_answer' || value === 'direct') return 'direct_answer';
+  if (value === 'document_summary' || value === 'summary')
+    return 'document_summary';
+  if (value === 'chart_only' || value === 'chart') return 'chart_only';
+  if (value === 'report_only' || value === 'report') return 'report_only';
+  if (value === 'report_with_chart') return 'report_with_chart';
+  if (value === 'comparison') return 'comparison';
+
+  return 'unknown';
+}
+
+export function normalizeResponse(
+  response: z.input<typeof assistantResponseSchema>,
+): NormalizedAssistantResponse {
+  const safe = assistantResponseSchema.parse(response);
+  const textBlocks = safe.blocks
+    .filter((block) => block.type === 'paragraph')
+    .map((block) => block.text);
+  const bulletBlocks = safe.blocks
+    .filter((block) => block.type === 'bullets')
+    .flatMap((block) => block.items);
+  const chartBlock = safe.blocks.find((block) => block.type === 'chart');
+
+  if (safe.kind === 'chart' && chartBlock) {
+    return {
+      type: 'chart',
+      summary: safe.message || undefined,
+      chart: {
+        chartType: chartBlock.chart.type,
+        title: chartBlock.chart.title,
+        labels: chartBlock.chart.labels,
+        values: chartBlock.chart.series[0]?.data ?? [],
+      },
+    };
+  }
+
+  if (safe.kind === 'mixed' && chartBlock) {
+    return {
+      type: 'report_with_chart',
+      report: {
+        title: safe.title || 'Analysis',
+        summary: safe.message || textBlocks[0] || 'Summary unavailable.',
+        insights: bulletBlocks,
+        conclusion: textBlocks[textBlocks.length - 1] || safe.message || '',
+      },
+      chart: {
+        chartType: chartBlock.chart.type,
+        title: chartBlock.chart.title,
+        labels: chartBlock.chart.labels,
+        values: chartBlock.chart.series[0]?.data ?? [],
+      },
+    };
+  }
+
+  if (safe.kind === 'report') {
+    return {
+      type: 'report',
+      report: {
+        title: safe.title || 'Report',
+        summary: safe.message || textBlocks[0] || 'Summary unavailable.',
+        insights: bulletBlocks,
+        conclusion: textBlocks[textBlocks.length - 1] || safe.message || '',
+      },
+    };
+  }
+
+  return {
+    type: 'text',
+    content:
+      safe.message ||
+      textBlocks.join('\n\n') ||
+      safe.title ||
+      'No response generated.',
+  };
 }
 
 export const notFoundResponse: AssistantResponse = {

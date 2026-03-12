@@ -112,3 +112,51 @@ export type StructuredAssistantResponse = {
   message?: string;
   blocks: ResponseBlock[];
 };
+
+export type BackendAssistantOutput =
+  | {
+      type: 'text';
+      content: string;
+      sources?: string[];
+    }
+  | {
+      type: 'chart';
+      summary?: string;
+      chart: {
+        chartType: 'bar' | 'line' | 'pie';
+        title: string;
+        labels: string[];
+        values: number[];
+      };
+      sources?: string[];
+    }
+  | {
+      type: 'report';
+      report: {
+        title: string;
+        summary: string;
+        insights: string[];
+        conclusion: string;
+        recommendations?: string[];
+        tables?: any[];
+      };
+      sources?: string[];
+    }
+  | {
+      type: 'report_with_chart';
+      report: {
+        title: string;
+        summary: string;
+        insights: string[];
+        conclusion: string;
+        recommendations?: string[];
+        tables?: any[];
+      };
+      chart: {
+        chartType: 'bar' | 'line' | 'pie';
+        title: string;
+        labels: string[];
+        values: number[];
+      };
+      sources?: string[];
+    };

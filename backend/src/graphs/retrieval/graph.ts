@@ -2,16 +2,19 @@ import { StateGraph, START, END } from '@langchain/langgraph';
 import { AgentConfigurationAnnotation } from '../../config/retrieval.js';
 import { AgentStateAnnotation } from './state.js';
 import {
-  answerQueryDirectly,
   checkQueryType,
   detectIntent,
   detectPreferences,
+  decideRetrieval,
   documentResolutionFallback,
   generateResponse,
+  planResponse,
+  recoverFromError,
   resolveDocument,
   retrieveDocuments,
+  routeAfterGenerate,
+  routeAfterPlanning,
   routeAfterResolution,
-  routeQuery,
 } from './nodes.js';
 
 const builder = new StateGraph(
@@ -20,27 +23,34 @@ const builder = new StateGraph(
 )
   .addNode('checkQueryType', checkQueryType)
   .addNode('resolveDocument', resolveDocument)
-  .addNode('retrieveDocuments', retrieveDocuments)
   .addNode('detectIntent', detectIntent)
   .addNode('detectPreferences', detectPreferences)
-  .addNode('documentResolutionFallback', documentResolutionFallback)
+  .addNode('decideRetrieval', decideRetrieval)
+  .addNode('planResponse', planResponse)
+  .addNode('retrieveDocuments', retrieveDocuments)
   .addNode('generateResponse', generateResponse)
-  .addNode('directAnswer', answerQueryDirectly)
+  .addNode('recoverFromError', recoverFromError)
+  .addNode('documentResolutionFallback', documentResolutionFallback)
   .addEdge(START, 'checkQueryType')
-  .addConditionalEdges('checkQueryType', routeQuery, [
-    'resolveDocument',
-    'directAnswer',
-  ])
+  .addEdge('checkQueryType', 'resolveDocument')
   .addConditionalEdges('resolveDocument', routeAfterResolution, [
-    'retrieveDocuments',
+    'detectIntent',
     'documentResolutionFallback',
   ])
-  .addEdge('retrieveDocuments', 'detectIntent')
   .addEdge('detectIntent', 'detectPreferences')
-  .addEdge('detectPreferences', 'generateResponse')
-  .addEdge('generateResponse', END)
-  .addEdge('documentResolutionFallback', END)
-  .addEdge('directAnswer', END);
+  .addEdge('detectPreferences', 'decideRetrieval')
+  .addEdge('decideRetrieval', 'planResponse')
+  .addConditionalEdges('planResponse', routeAfterPlanning, [
+    'retrieveDocuments',
+    'generateResponse',
+  ])
+  .addEdge('retrieveDocuments', 'generateResponse')
+  .addConditionalEdges('generateResponse', routeAfterGenerate, [
+    'recoverFromError',
+    END,
+  ])
+  .addEdge('recoverFromError', 'generateResponse')
+  .addEdge('documentResolutionFallback', END);
 
 export const graph = builder.compile().withConfig({
   runName: 'RetrievalGraph',

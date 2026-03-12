@@ -3,14 +3,15 @@ import { RunnableConfig } from '@langchain/core/runnables';
 import { z } from 'zod';
 import { ensureAgentConfiguration } from '../config/retrieval.js';
 import {
+  agentIntentSchema,
   assistantResponseSchema,
   DEFAULT_USER_PREFERENCES,
-  getPreferredKindForIntent,
+  normalizeIntent,
   normalizePreferences,
+  normalizeResponse,
   notFoundResponse,
-  responseIntentSchema,
+  NormalizedAssistantResponse,
   NormalizedUserPreferences,
-  ResponseIntent,
   userPreferencesSchema,
 } from '../types/response.js';
 import { formatDocs } from '../utils/retrieval.js';
@@ -23,15 +24,10 @@ import {
   ROUTER_SYSTEM_PROMPT,
 } from '../graphs/retrieval/prompts.js';
 import { AgentState } from '../graphs/retrieval/state.js';
+import { invokeStructuredSafely } from './structured-safe.js';
 
-const routeSchema = z.object({
-  route: z.enum(['retrieve', 'direct']),
-});
-
-const intentResultSchema = z.object({
-  intent: responseIntentSchema,
-});
-
+const routeSchema = z.object({ route: z.enum(['retrieve', 'direct']) });
+const intentResultSchema = z.object({ intent: agentIntentSchema });
 const preferencesResultSchema = z.object({
   preferences: userPreferencesSchema,
 });
@@ -42,28 +38,36 @@ export async function classifyRoute(
 ): Promise<'retrieve' | 'direct'> {
   const configuration = ensureAgentConfiguration(config);
   const model = await loadChatModel(configuration.queryModel);
-
   const formattedPrompt = await ROUTER_SYSTEM_PROMPT.invoke({ query });
-  const response = await model
-    .withStructuredOutput(routeSchema)
-    .invoke(formattedPrompt);
 
-  return response.route;
+  const parsed = await invokeStructuredSafely({
+    model,
+    schema: routeSchema,
+    prompt: formattedPrompt,
+    fallback: { route: 'retrieve' as const },
+    logLabel: 'classifyRoute',
+  });
+
+  return parsed.route;
 }
 
 export async function classifyIntent(
   query: string,
   config: RunnableConfig,
-): Promise<ResponseIntent> {
+): Promise<z.infer<typeof agentIntentSchema>> {
   const configuration = ensureAgentConfiguration(config);
   const model = await loadChatModel(configuration.queryModel);
-
   const formattedPrompt = await INTENT_SYSTEM_PROMPT.invoke({ query });
-  const response = await model
-    .withStructuredOutput(intentResultSchema)
-    .invoke(formattedPrompt);
 
-  return response.intent;
+  const parsed = await invokeStructuredSafely({
+    model,
+    schema: intentResultSchema,
+    prompt: formattedPrompt,
+    fallback: { intent: 'unknown' },
+    logLabel: 'classifyIntent',
+  });
+
+  return normalizeIntent(parsed.intent);
 }
 
 export async function classifyPreferences(
@@ -72,18 +76,26 @@ export async function classifyPreferences(
 ): Promise<NormalizedUserPreferences> {
   const configuration = ensureAgentConfiguration(config);
   const model = await loadChatModel(configuration.queryModel);
+  const formattedPrompt = await PREFERENCES_SYSTEM_PROMPT.invoke({ query });
 
-  try {
-    const formattedPrompt = await PREFERENCES_SYSTEM_PROMPT.invoke({ query });
-    const response = await model
-      .withStructuredOutput(preferencesResultSchema)
-      .invoke(formattedPrompt);
+  const parsed = await invokeStructuredSafely({
+    model,
+    schema: preferencesResultSchema,
+    prompt: formattedPrompt,
+    fallback: {
+      preferences: userPreferencesSchema.parse(DEFAULT_USER_PREFERENCES),
+    },
+    logLabel: 'classifyPreferences',
+  });
 
-    return normalizePreferences(response.preferences);
-  } catch (error) {
-    console.warn('Preference parsing failed, using defaults.', error);
-    return DEFAULT_USER_PREFERENCES;
-  }
+  return normalizePreferences(userPreferencesSchema.parse(parsed.preferences));
+}
+
+function toMessageText(output: NormalizedAssistantResponse): string {
+  if (output.type === 'text') return output.content;
+  if (output.type === 'chart') return output.summary || output.chart.title;
+  if (output.type === 'report') return output.report.summary;
+  return output.report.summary;
 }
 
 export async function generateDirectResponse(
@@ -91,7 +103,8 @@ export async function generateDirectResponse(
   config: RunnableConfig,
 ): Promise<{
   messages: AIMessage[];
-  response: ReturnType<typeof assistantResponseSchema.parse>;
+  response: z.output<typeof assistantResponseSchema>;
+  uiResponse: NormalizedAssistantResponse;
 }> {
   const configuration = ensureAgentConfiguration(config);
   const model = await loadChatModel(configuration.queryModel);
@@ -99,14 +112,22 @@ export async function generateDirectResponse(
   const formattedPrompt = await DIRECT_SYSTEM_PROMPT.invoke({
     question: query,
   });
-  const responsePayload = await model
-    .withStructuredOutput(assistantResponseSchema)
-    .invoke(formattedPrompt);
-  const response = assistantResponseSchema.parse(responsePayload);
+
+  const responseRaw = await invokeStructuredSafely({
+    model,
+    schema: assistantResponseSchema,
+    prompt: formattedPrompt,
+    fallback: notFoundResponse,
+    logLabel: 'generateDirectResponse',
+  });
+  const response = assistantResponseSchema.parse(responseRaw);
+
+  const uiResponse = normalizeResponse(response);
 
   return {
-    messages: [new AIMessage(JSON.stringify(response))],
+    messages: [new AIMessage(toMessageText(uiResponse))],
     response,
+    uiResponse,
   };
 }
 
@@ -115,38 +136,49 @@ export async function generateRetrievedResponse(
   config: RunnableConfig,
 ): Promise<{
   messages: AIMessage[];
-  response: ReturnType<typeof assistantResponseSchema.parse>;
+  response: z.output<typeof assistantResponseSchema>;
+  uiResponse: NormalizedAssistantResponse;
 }> {
   const configuration = ensureAgentConfiguration(config);
   const model = await loadChatModel(configuration.queryModel);
 
   const context = formatDocs(state.documents);
-
   if (!context || context.trim().length === 0) {
+    const fallback = {
+      ...notFoundResponse,
+      message:
+        'I could not find relevant document content, but you can ask a narrower question or specify a document.',
+    };
+    const uiResponse = normalizeResponse(fallback);
     return {
-      messages: [new AIMessage(JSON.stringify(notFoundResponse))],
-      response: notFoundResponse,
+      messages: [new AIMessage(toMessageText(uiResponse))],
+      response: fallback,
+      uiResponse,
     };
   }
-
-  const intent = state.intent ?? 'general';
-  const preferences = state.preferences ?? {};
 
   const formattedPrompt = await RESPONSE_SYSTEM_PROMPT.invoke({
     question: state.query,
     context,
-    intent,
-    preferredKind: getPreferredKindForIntent(intent),
-    preferences: JSON.stringify(preferences),
+    intent: state.agentIntent ?? 'unknown',
+    preferredKind: state.agentIntent ?? 'unknown',
+    preferences: JSON.stringify(state.preferences ?? DEFAULT_USER_PREFERENCES),
   });
 
-  const responsePayload = await model
-    .withStructuredOutput(assistantResponseSchema)
-    .invoke(formattedPrompt);
-  const response = assistantResponseSchema.parse(responsePayload);
+  const responseRaw = await invokeStructuredSafely({
+    model,
+    schema: assistantResponseSchema,
+    prompt: formattedPrompt,
+    fallback: notFoundResponse,
+    logLabel: 'generateRetrievedResponse',
+  });
+  const response = assistantResponseSchema.parse(responseRaw);
+
+  const uiResponse = normalizeResponse(response);
 
   return {
-    messages: [new AIMessage(JSON.stringify(response))],
+    messages: [new AIMessage(toMessageText(uiResponse))],
     response,
+    uiResponse,
   };
 }

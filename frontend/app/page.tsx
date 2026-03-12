@@ -11,13 +11,18 @@ import { ExamplePrompts } from '@/components/example-prompts';
 import { ChatMessage } from '@/components/chat-message';
 import { FilePreview } from '@/components/file-preview';
 import { client } from '@/lib/langgraph-client';
-import { PDFDocument, RetrieveDocumentsNodeUpdates } from '@/types/graphTypes';
+import {
+  BackendAssistantOutput,
+  PDFDocument,
+  RetrieveDocumentsNodeUpdates,
+} from '@/types/graphTypes';
 
 type UIMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   sources?: PDFDocument[];
+  structured?: BackendAssistantOutput;
 };
 
 type UploadedDocumentInput = {
@@ -82,6 +87,7 @@ export default function Home() {
     messageId: string,
     content: string,
     sources: PDFDocument[] = lastRetrievedDocsRef.current,
+    structured?: BackendAssistantOutput,
   ) => {
     setMessages((prev) =>
       prev.map((msg) =>
@@ -90,6 +96,7 @@ export default function Home() {
               ...msg,
               content,
               sources,
+              structured,
             }
           : msg,
       ),
@@ -276,20 +283,35 @@ export default function Home() {
               data !== null &&
               'directAnswer' in data &&
               (data as any).directAnswer &&
-              Array.isArray((data as any).directAnswer.messages) &&
-              (data as any).directAnswer.messages.length > 0
+              ((data as any).directAnswer.uiResponse ||
+                (Array.isArray((data as any).directAnswer.messages) &&
+                  (data as any).directAnswer.messages.length > 0))
             ) {
-              const lastMessage = (data as any).directAnswer.messages[
-                (data as any).directAnswer.messages.length - 1
-              ];
+              const uiResponse = (data as any).directAnswer.uiResponse as
+                | BackendAssistantOutput
+                | undefined;
+              const lastMessage = Array.isArray(
+                (data as any).directAnswer.messages,
+              )
+                ? (data as any).directAnswer.messages[
+                    (data as any).directAnswer.messages.length - 1
+                  ]
+                : undefined;
 
-              const textContent = extractTextContent(lastMessage?.content);
+              const textContent = uiResponse
+                ? uiResponse.type === 'text'
+                  ? uiResponse.content
+                  : uiResponse.type === 'chart'
+                    ? uiResponse.summary || uiResponse.chart.title
+                    : uiResponse.report.summary
+                : extractTextContent(lastMessage?.content);
 
               if (textContent.trim() && activeAssistantMessageIdRef.current) {
                 updateAssistantMessageById(
                   activeAssistantMessageIdRef.current,
                   textContent,
                   [],
+                  uiResponse,
                 );
               }
             }
@@ -299,20 +321,35 @@ export default function Home() {
               data !== null &&
               'generateResponse' in data &&
               (data as any).generateResponse &&
-              Array.isArray((data as any).generateResponse.messages) &&
-              (data as any).generateResponse.messages.length > 0
+              ((data as any).generateResponse.uiResponse ||
+                (Array.isArray((data as any).generateResponse.messages) &&
+                  (data as any).generateResponse.messages.length > 0))
             ) {
-              const lastMessage = (data as any).generateResponse.messages[
-                (data as any).generateResponse.messages.length - 1
-              ];
+              const uiResponse = (data as any).generateResponse.uiResponse as
+                | BackendAssistantOutput
+                | undefined;
+              const lastMessage = Array.isArray(
+                (data as any).generateResponse.messages,
+              )
+                ? (data as any).generateResponse.messages[
+                    (data as any).generateResponse.messages.length - 1
+                  ]
+                : undefined;
 
-              const textContent = extractTextContent(lastMessage?.content);
+              const textContent = uiResponse
+                ? uiResponse.type === 'text'
+                  ? uiResponse.content
+                  : uiResponse.type === 'chart'
+                    ? uiResponse.summary || uiResponse.chart.title
+                    : uiResponse.report.summary
+                : extractTextContent(lastMessage?.content);
 
               if (textContent.trim() && activeAssistantMessageIdRef.current) {
                 updateAssistantMessageById(
                   activeAssistantMessageIdRef.current,
                   textContent,
                   lastRetrievedDocsRef.current,
+                  uiResponse,
                 );
               }
             }

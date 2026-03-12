@@ -102,38 +102,32 @@ Important:
 - Paraphrases and indirect requests must map to the closest intent.
 
 Choose exactly one intent label:
-- summary
-- detailed_report
-- executive_summary
-- insights
-- trends
-- comparison
-- chart
+- direct_answer
+- document_summary
+- chart_only
+- report_only
 - report_with_chart
-- table
-- general
+- comparison
+- unknown
 
 Intent semantics:
-- summary: concise recap of major points.
-- detailed_report: formal, comprehensive, multi-section analysis.
-- executive_summary: business-facing high-level brief for decision makers.
-- insights: key findings, takeaways, and implications.
-- trends: change over time, trajectory, direction, seasonality.
-- comparison: contrast entities/periods/options; side-by-side analysis.
-- chart: primarily visual presentation request.
-- report_with_chart: narrative analysis plus visual support.
-- table: structured rows/columns style presentation.
-- general: none of the above dominates.
+- direct_answer: general knowledge/chitchat request not needing uploaded docs.
+- document_summary: asks about uploaded document/file/pdf, including vague references.
+- chart_only: asks primarily for chart/graph/visualization only.
+- report_only: asks for report/analysis/insights in narrative form.
+- report_with_chart: asks for both report + chart output.
+- comparison: asks to compare document sections/files/time periods.
+- unknown: cannot confidently classify.
 
 Examples of natural phrasing (non-exhaustive):
-- "show performance visually" => chart
-- "make a proper business report" => detailed_report
+- "show performance visually" => chart_only
+- "make a proper business report" => report_only
 - "compare these months" => comparison
-- "what are the main findings?" => insights
+- "what are the main findings?" => document_summary
 
 Return valid JSON only:
 {{
-  "intent": "summary" | "detailed_report" | "executive_summary" | "insights" | "trends" | "comparison" | "chart" | "report_with_chart" | "table" | "general"
+  "intent": "direct_answer" | "document_summary" | "chart_only" | "report_only" | "report_with_chart" | "comparison" | "unknown"
 }}
 `,
   ],
@@ -166,7 +160,7 @@ Default behavior when unspecified:
 - chartType: "auto"
 - reportDepth: "standard"
 - reportStyle: "neutral"
-- focusArea: "general"
+- focusArea: ""
 - includeRecommendations: false
 - includeCharts: false
 - includeTables: false

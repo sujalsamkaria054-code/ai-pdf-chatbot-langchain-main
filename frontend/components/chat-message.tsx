@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useMemo, useState } from 'react';
 import {
+  BackendAssistantOutput,
   PDFDocument,
   StructuredAssistantResponse,
   ChartData,
@@ -23,6 +24,7 @@ interface ChatMessageProps {
     role: 'user' | 'assistant';
     content: string;
     sources?: PDFDocument[];
+    structured?: BackendAssistantOutput;
   };
 }
 
@@ -86,16 +88,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   const parsed = useMemo(() => {
     if (message.role !== 'assistant') return null;
+    if (message.structured) return null;
     return parseStructuredResponse(message.content);
-  }, [message.content, message.role]);
+  }, [message.content, message.role, message.structured]);
 
   const isLoading = message.role === 'assistant' && !message.content?.trim();
 
   const handleCopy = async () => {
     try {
-      const copyText = parsed
-        ? extractPlainTextFromStructuredResponse(parsed)
-        : message.content;
+      const copyText = message.structured
+        ? message.structured.type === 'text'
+          ? message.structured.content
+          : message.content
+        : parsed
+          ? extractPlainTextFromStructuredResponse(parsed)
+          : message.content;
 
       await navigator.clipboard.writeText(copyText);
       setCopied(true);
@@ -117,6 +124,82 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
 
     if (!parsed) {
+      if (message.structured) {
+        const structured = message.structured;
+
+        if (structured.type === 'text') {
+          return (
+            <p className="whitespace-pre-wrap text-sm leading-6">
+              {structured.content}
+            </p>
+          );
+        }
+
+        if (structured.type === 'chart') {
+          return (
+            <div className="space-y-3">
+              {structured.summary && (
+                <p className="whitespace-pre-wrap text-sm leading-6">
+                  {structured.summary}
+                </p>
+              )}
+              <ChartRenderer
+                chart={{
+                  type: structured.chart.chartType,
+                  title: structured.chart.title,
+                  labels: structured.chart.labels,
+                  series: [
+                    {
+                      name: structured.chart.title,
+                      data: structured.chart.values,
+                    },
+                  ],
+                }}
+              />
+            </div>
+          );
+        }
+
+        if (structured.type === 'report') {
+          return (
+            <div className="space-y-3">
+              <h3 className="text-base font-semibold">
+                {structured.report.title}
+              </h3>
+              <p className="whitespace-pre-wrap text-sm leading-6">
+                {structured.report.summary}
+              </p>
+            </div>
+          );
+        }
+
+        if (structured.type === 'report_with_chart') {
+          return (
+            <div className="space-y-3">
+              <h3 className="text-base font-semibold">
+                {structured.report.title}
+              </h3>
+              <p className="whitespace-pre-wrap text-sm leading-6">
+                {structured.report.summary}
+              </p>
+              <ChartRenderer
+                chart={{
+                  type: structured.chart.chartType,
+                  title: structured.chart.title,
+                  labels: structured.chart.labels,
+                  series: [
+                    {
+                      name: structured.chart.title,
+                      data: structured.chart.values,
+                    },
+                  ],
+                }}
+              />
+            </div>
+          );
+        }
+      }
+
       if (looksLikeJson(message.content)) {
         return (
           <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
