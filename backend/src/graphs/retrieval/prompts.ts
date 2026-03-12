@@ -151,6 +151,7 @@ Important:
 - Do NOT rely on exact keyword matching only.
 - Return only preferences that are reasonably implied.
 - If a preference is not implied, omit the field.
+- Do not output null; omit unknown fields instead.
 
 Extract these optional fields:
 - chartType: "bar" | "line" | "pie" | "auto"

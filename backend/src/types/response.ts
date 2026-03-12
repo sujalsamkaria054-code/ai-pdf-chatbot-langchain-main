@@ -89,15 +89,21 @@ export const reportStylePreferenceSchema = z.enum([
   'neutral',
 ]);
 
+const nullableOptional = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (value) => (value === null ? undefined : value),
+    schema.optional(),
+  );
+
 export const userPreferencesSchema = z
   .object({
-    chartType: chartTypePreferenceSchema.optional(),
-    reportDepth: reportDepthPreferenceSchema.optional(),
-    reportStyle: reportStylePreferenceSchema.optional(),
-    focusArea: z.string().optional(),
-    includeRecommendations: z.boolean().optional(),
-    includeCharts: z.boolean().optional(),
-    includeTables: z.boolean().optional(),
+    chartType: nullableOptional(chartTypePreferenceSchema),
+    reportDepth: nullableOptional(reportDepthPreferenceSchema),
+    reportStyle: nullableOptional(reportStylePreferenceSchema),
+    focusArea: nullableOptional(z.string()),
+    includeRecommendations: nullableOptional(z.boolean()),
+    includeCharts: nullableOptional(z.boolean()),
+    includeTables: nullableOptional(z.boolean()),
   })
   .strict();
 

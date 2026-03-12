@@ -76,4 +76,24 @@ describe('userPreferencesSchema', () => {
     expect(parsed.reportStyle).toBe('technical');
     expect(parsed.includeRecommendations).toBe(true);
   });
+
+  it('accepts null values from model output and normalizes to undefined', () => {
+    const parsed = userPreferencesSchema.parse({
+      chartType: null,
+      reportDepth: null,
+      reportStyle: null,
+      focusArea: null,
+      includeRecommendations: null,
+      includeCharts: null,
+      includeTables: null,
+    });
+
+    expect(parsed.chartType).toBeUndefined();
+    expect(parsed.reportDepth).toBeUndefined();
+    expect(parsed.reportStyle).toBeUndefined();
+    expect(parsed.focusArea).toBeUndefined();
+    expect(parsed.includeRecommendations).toBeUndefined();
+    expect(parsed.includeCharts).toBeUndefined();
+    expect(parsed.includeTables).toBeUndefined();
+  });
 });
