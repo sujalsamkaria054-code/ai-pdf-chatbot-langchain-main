@@ -22,23 +22,20 @@ ChartJS.register(
   PointElement,
   LineElement,
   Tooltip,
-  Legend
+  Legend,
 );
 
 export default function ChartRenderer({ chart }: { chart: ChartData }) {
-  if (!chart || !chart.series || chart.series.length === 0) {
+  if (!chart || !chart.datasets || chart.datasets.length === 0) {
     return null;
   }
 
-  const datasets = chart.series.map((s) => ({
-    label: s.name,
-    data: s.data,
-    borderWidth: 2,
-  }));
-
   const data = {
     labels: chart.labels,
-    datasets,
+    datasets: chart.datasets.map((dataset) => ({
+      ...dataset,
+      borderWidth: 2,
+    })),
   };
 
   const options = {
@@ -55,35 +52,15 @@ export default function ChartRenderer({ chart }: { chart: ChartData }) {
     },
   };
 
-  if (chart.type === 'pie') {
-    if (chart.series.length > 1) {
-      return (
-        <div className="text-sm text-muted-foreground">
-          Pie chart supports only a single data series.
-        </div>
-      );
-    }
-
+  if (chart.chartType === 'pie') {
     return (
       <div className="h-[320px] w-full">
-        <Pie
-          data={{
-            labels: chart.labels,
-            datasets: [
-              {
-                label: chart.series[0].name,
-                data: chart.series[0].data,
-                borderWidth: 1,
-              },
-            ],
-          }}
-          options={options}
-        />
+        <Pie data={data} options={options} />
       </div>
     );
   }
 
-  if (chart.type === 'bar') {
+  if (chart.chartType === 'bar') {
     return (
       <div className="h-[320px] w-full">
         <Bar data={data} options={options} />
@@ -91,13 +68,9 @@ export default function ChartRenderer({ chart }: { chart: ChartData }) {
     );
   }
 
-  if (chart.type === 'line') {
-    return (
-      <div className="h-[320px] w-full">
-        <Line data={data} options={options} />
-      </div>
-    );
-  }
-
-  return null;
+  return (
+    <div className="h-[320px] w-full">
+      <Line data={data} options={options} />
+    </div>
+  );
 }
