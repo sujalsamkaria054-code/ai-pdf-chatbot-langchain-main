@@ -4,11 +4,13 @@ import { z } from 'zod';
 import { ensureAgentConfiguration } from '../config/retrieval.js';
 import {
   assistantResponseSchema,
+  DEFAULT_USER_PREFERENCES,
   getPreferredKindForIntent,
+  normalizePreferences,
   notFoundResponse,
   responseIntentSchema,
+  NormalizedUserPreferences,
   ResponseIntent,
-  UserPreferences,
   userPreferencesSchema,
 } from '../types/response.js';
 import { formatDocs } from '../utils/retrieval.js';
@@ -67,16 +69,21 @@ export async function classifyIntent(
 export async function classifyPreferences(
   query: string,
   config: RunnableConfig,
-): Promise<UserPreferences> {
+): Promise<NormalizedUserPreferences> {
   const configuration = ensureAgentConfiguration(config);
   const model = await loadChatModel(configuration.queryModel);
 
-  const formattedPrompt = await PREFERENCES_SYSTEM_PROMPT.invoke({ query });
-  const response = await model
-    .withStructuredOutput(preferencesResultSchema)
-    .invoke(formattedPrompt);
+  try {
+    const formattedPrompt = await PREFERENCES_SYSTEM_PROMPT.invoke({ query });
+    const response = await model
+      .withStructuredOutput(preferencesResultSchema)
+      .invoke(formattedPrompt);
 
-  return response.preferences;
+    return normalizePreferences(response.preferences);
+  } catch (error) {
+    console.warn('Preference parsing failed, using defaults.', error);
+    return DEFAULT_USER_PREFERENCES;
+  }
 }
 
 export async function generateDirectResponse(

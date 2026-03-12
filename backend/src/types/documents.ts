@@ -6,3 +6,10 @@ export type DocumentCollectionInput =
   | string[]
   | string
   | 'delete';
+
+export type UploadedDocumentMetadata = {
+  id: string;
+  fileName: string;
+  uploadOrder: number;
+  uploadedAt: string;
+};

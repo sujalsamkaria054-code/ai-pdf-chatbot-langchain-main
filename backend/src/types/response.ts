@@ -107,9 +107,55 @@ export const userPreferencesSchema = z
   })
   .strict();
 
+export const normalizedUserPreferencesSchema = z
+  .object({
+    chartType: chartTypePreferenceSchema,
+    reportDepth: reportDepthPreferenceSchema,
+    reportStyle: reportStylePreferenceSchema,
+    focusArea: z.string(),
+    includeRecommendations: z.boolean(),
+    includeCharts: z.boolean(),
+    includeTables: z.boolean(),
+  })
+  .strict();
+
 export type AssistantResponse = z.infer<typeof assistantResponseSchema>;
 export type ResponseIntent = z.infer<typeof responseIntentSchema>;
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
+export type NormalizedUserPreferences = z.infer<
+  typeof normalizedUserPreferencesSchema
+>;
+
+export const DEFAULT_USER_PREFERENCES: NormalizedUserPreferences = {
+  chartType: 'auto',
+  reportDepth: 'standard',
+  reportStyle: 'neutral',
+  focusArea: 'general',
+  includeRecommendations: false,
+  includeCharts: false,
+  includeTables: false,
+};
+
+export function normalizePreferences(
+  preferences?: UserPreferences,
+): NormalizedUserPreferences {
+  return {
+    chartType: preferences?.chartType ?? DEFAULT_USER_PREFERENCES.chartType,
+    reportDepth:
+      preferences?.reportDepth ?? DEFAULT_USER_PREFERENCES.reportDepth,
+    reportStyle:
+      preferences?.reportStyle ?? DEFAULT_USER_PREFERENCES.reportStyle,
+    focusArea:
+      preferences?.focusArea?.trim() || DEFAULT_USER_PREFERENCES.focusArea,
+    includeRecommendations:
+      preferences?.includeRecommendations ??
+      DEFAULT_USER_PREFERENCES.includeRecommendations,
+    includeCharts:
+      preferences?.includeCharts ?? DEFAULT_USER_PREFERENCES.includeCharts,
+    includeTables:
+      preferences?.includeTables ?? DEFAULT_USER_PREFERENCES.includeTables,
+  };
+}
 
 export function getPreferredKindForIntent(
   intent: ResponseIntent,

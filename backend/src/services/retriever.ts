@@ -59,3 +59,21 @@ export async function makeRetriever(
       );
   }
 }
+
+export async function makeRetrieverWithFilter(
+  config: RunnableConfig,
+  filterKwargs: Record<string, unknown>,
+): Promise<VectorStoreRetriever> {
+  const configurable = (config?.configurable || {}) as Record<string, unknown>;
+
+  return makeRetriever({
+    ...config,
+    configurable: {
+      ...configurable,
+      filterKwargs: {
+        ...(configurable.filterKwargs as Record<string, unknown> | undefined),
+        ...filterKwargs,
+      },
+    },
+  });
+}

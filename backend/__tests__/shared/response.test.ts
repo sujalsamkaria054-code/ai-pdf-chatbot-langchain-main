@@ -1,6 +1,8 @@
 import {
   assistantResponseSchema,
+  DEFAULT_USER_PREFERENCES,
   getPreferredKindForIntent,
+  normalizePreferences,
   notFoundResponse,
   userPreferencesSchema,
   responseIntentSchema,
@@ -95,5 +97,21 @@ describe('userPreferencesSchema', () => {
     expect(parsed.includeRecommendations).toBeUndefined();
     expect(parsed.includeCharts).toBeUndefined();
     expect(parsed.includeTables).toBeUndefined();
+  });
+
+  it('normalizes nullable/omitted preferences into safe defaults', () => {
+    const normalized = normalizePreferences(
+      userPreferencesSchema.parse({
+        chartType: null,
+        reportDepth: null,
+        reportStyle: null,
+        focusArea: null,
+        includeRecommendations: null,
+        includeCharts: null,
+        includeTables: null,
+      }),
+    );
+
+    expect(normalized).toEqual(DEFAULT_USER_PREFERENCES);
   });
 });

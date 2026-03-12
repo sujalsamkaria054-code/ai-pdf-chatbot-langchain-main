@@ -1,5 +1,10 @@
+import { AIMessage } from '@langchain/core/messages';
 import { RunnableConfig } from '@langchain/core/runnables';
-import { makeRetriever } from '../../services/retriever.js';
+import {
+  makeRetriever,
+  makeRetrieverWithFilter,
+} from '../../services/retriever.js';
+import { resolveDocumentReference } from '../../services/document-resolution.js';
 import {
   classifyIntent,
   classifyPreferences,
@@ -8,6 +13,7 @@ import {
   generateRetrievedResponse,
 } from '../../services/retrieval-assistant.js';
 import { AgentStateAnnotation } from './state.js';
+import { AssistantResponse } from '../../types/response.js';
 
 export async function checkQueryType(
   state: typeof AgentStateAnnotation.State,
@@ -30,13 +36,75 @@ export async function detectPreferences(
   return { preferences: await classifyPreferences(state.query, config) };
 }
 
+export async function resolveDocument(
+  state: typeof AgentStateAnnotation.State,
+): Promise<typeof AgentStateAnnotation.Update> {
+  const resolution = resolveDocumentReference({
+    query: state.query,
+    uploadedDocuments: state.uploadedDocuments ?? [],
+    activeDocumentId: state.activeDocumentId,
+    lastReferencedDocumentId: state.lastReferencedDocumentId,
+  });
+
+  if (resolution.status === 'resolved') {
+    return {
+      activeDocumentId: resolution.document.id,
+      lastReferencedDocumentId: resolution.document.id,
+      documentResolutionError: undefined,
+    };
+  }
+
+  return {
+    documentResolutionError: resolution.message,
+  };
+}
+
+export async function routeAfterResolution(
+  state: typeof AgentStateAnnotation.State,
+): Promise<'retrieveDocuments' | 'documentResolutionFallback'> {
+  return state.documentResolutionError
+    ? 'documentResolutionFallback'
+    : 'retrieveDocuments';
+}
+
+export async function documentResolutionFallback(
+  state: typeof AgentStateAnnotation.State,
+): Promise<typeof AgentStateAnnotation.Update> {
+  const response: AssistantResponse = {
+    kind: 'text',
+    title: 'Document Selection Needed',
+    message:
+      state.documentResolutionError ||
+      'I could not determine which document to analyze.',
+    blocks: [],
+  };
+
+  return {
+    response,
+    messages: [new AIMessage(JSON.stringify(response))],
+  };
+}
+
 export async function retrieveDocuments(
   state: typeof AgentStateAnnotation.State,
   config: RunnableConfig,
 ): Promise<typeof AgentStateAnnotation.Update> {
-  const retriever = await makeRetriever(config);
+  const targetDocument = state.uploadedDocuments.find(
+    (doc) => doc.id === state.activeDocumentId,
+  );
+
+  const retriever = targetDocument
+    ? await makeRetrieverWithFilter(config, {
+        filename: targetDocument.fileName,
+      })
+    : await makeRetriever(config);
+
   const response = await retriever.invoke(state.query);
-  return { documents: response };
+  return {
+    documents: response,
+    lastReferencedDocumentId:
+      targetDocument?.id ?? state.lastReferencedDocumentId,
+  };
 }
 
 export async function generateResponse(

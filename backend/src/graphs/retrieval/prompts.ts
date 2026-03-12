@@ -162,6 +162,15 @@ Extract these optional fields:
 - includeCharts: boolean
 - includeTables: boolean
 
+Default behavior when unspecified:
+- chartType: "auto"
+- reportDepth: "standard"
+- reportStyle: "neutral"
+- focusArea: "general"
+- includeRecommendations: false
+- includeCharts: false
+- includeTables: false
+
 Interpretation examples:
 - "show performance visually" => includeCharts: true
 - "make a proper business report" => reportStyle: "business"

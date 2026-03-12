@@ -3,10 +3,13 @@ import { Document } from '@langchain/core/documents';
 import { reduceDocs } from '../../utils/state.js';
 import {
   AssistantResponse,
+  NormalizedUserPreferences,
   ResponseIntent,
-  UserPreferences,
 } from '../../types/response.js';
-import { DocumentCollectionInput } from '../../types/documents.js';
+import {
+  DocumentCollectionInput,
+  UploadedDocumentMetadata,
+} from '../../types/documents.js';
 
 export const AgentStateAnnotation = Annotation.Root({
   query: Annotation<string>(),
@@ -19,7 +22,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: reduceDocs,
   }),
   response: Annotation<AssistantResponse | undefined>(),
-  preferences: Annotation<UserPreferences | undefined>(),
+  preferences: Annotation<NormalizedUserPreferences | undefined>(),
+  uploadedDocuments: Annotation<UploadedDocumentMetadata[]>(),
+  activeDocumentId: Annotation<string | undefined>(),
+  lastReferencedDocumentId: Annotation<string | undefined>(),
+  documentResolutionError: Annotation<string | undefined>(),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

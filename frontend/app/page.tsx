@@ -11,16 +11,20 @@ import { ExamplePrompts } from '@/components/example-prompts';
 import { ChatMessage } from '@/components/chat-message';
 import { FilePreview } from '@/components/file-preview';
 import { client } from '@/lib/langgraph-client';
-import {
-  PDFDocument,
-  RetrieveDocumentsNodeUpdates,
-} from '@/types/graphTypes';
+import { PDFDocument, RetrieveDocumentsNodeUpdates } from '@/types/graphTypes';
 
 type UIMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   sources?: PDFDocument[];
+};
+
+type UploadedDocumentInput = {
+  id: string;
+  fileName: string;
+  uploadOrder: number;
+  uploadedAt: string;
 };
 
 export default function Home() {
@@ -32,6 +36,9 @@ export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState<
+    UploadedDocumentInput[]
+  >([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -176,6 +183,7 @@ export default function Home() {
         body: JSON.stringify({
           message: userMessage,
           threadId,
+          uploadedDocuments,
         }),
         signal: abortController.signal,
       });
@@ -236,10 +244,7 @@ export default function Home() {
               const lastObj = data[data.length - 1];
               const textContent = extractTextContent(lastObj?.content);
 
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
+              if (textContent.trim() && activeAssistantMessageIdRef.current) {
                 updateAssistantMessageById(
                   activeAssistantMessageIdRef.current,
                   textContent,
@@ -274,17 +279,13 @@ export default function Home() {
               Array.isArray((data as any).directAnswer.messages) &&
               (data as any).directAnswer.messages.length > 0
             ) {
-              const lastMessage =
-                (data as any).directAnswer.messages[
-                  (data as any).directAnswer.messages.length - 1
-                ];
+              const lastMessage = (data as any).directAnswer.messages[
+                (data as any).directAnswer.messages.length - 1
+              ];
 
               const textContent = extractTextContent(lastMessage?.content);
 
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
+              if (textContent.trim() && activeAssistantMessageIdRef.current) {
                 updateAssistantMessageById(
                   activeAssistantMessageIdRef.current,
                   textContent,
@@ -301,17 +302,13 @@ export default function Home() {
               Array.isArray((data as any).generateResponse.messages) &&
               (data as any).generateResponse.messages.length > 0
             ) {
-              const lastMessage =
-                (data as any).generateResponse.messages[
-                  (data as any).generateResponse.messages.length - 1
-                ];
+              const lastMessage = (data as any).generateResponse.messages[
+                (data as any).generateResponse.messages.length - 1
+              ];
 
               const textContent = extractTextContent(lastMessage?.content);
 
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
+              if (textContent.trim() && activeAssistantMessageIdRef.current) {
                 updateAssistantMessageById(
                   activeAssistantMessageIdRef.current,
                   textContent,
@@ -329,10 +326,7 @@ export default function Home() {
               const lastObj = data[data.length - 1];
               const textContent = extractTextContent(lastObj?.content);
 
-              if (
-                textContent.trim() &&
-                activeAssistantMessageIdRef.current
-              ) {
+              if (textContent.trim() && activeAssistantMessageIdRef.current) {
                 updateAssistantMessageById(
                   activeAssistantMessageIdRef.current,
                   textContent,
@@ -406,6 +400,17 @@ export default function Home() {
       }
 
       setFiles((prev) => [...prev, ...selectedFiles]);
+      setUploadedDocuments((prev) => {
+        const baseOrder = prev.length;
+        const now = new Date().toISOString();
+        const next = selectedFiles.map((file, index) => ({
+          id: `${file.name}-${Date.now()}-${index}`,
+          fileName: file.name,
+          uploadOrder: baseOrder + index,
+          uploadedAt: now,
+        }));
+        return [...prev, ...next];
+      });
 
       toast({
         title: 'Success',
@@ -435,6 +440,9 @@ export default function Home() {
 
   const handleRemoveFile = (fileToRemove: File) => {
     setFiles((prev) => prev.filter((file) => file !== fileToRemove));
+    setUploadedDocuments((prev) =>
+      prev.filter((doc) => doc.fileName !== fileToRemove.name),
+    );
 
     toast({
       title: 'File removed',
