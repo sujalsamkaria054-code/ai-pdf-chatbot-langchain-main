@@ -51,6 +51,12 @@ export async function checkQueryType(
   };
 }
 
+export async function routeAfterCheck(
+  state: typeof AgentStateAnnotation.State,
+): Promise<'resolveDocument' | 'detectIntent'> {
+  return state.route === 'retrieve' ? 'resolveDocument' : 'detectIntent';
+}
+
 export async function resolveDocument(
   state: typeof AgentStateAnnotation.State,
 ): Promise<typeof AgentStateAnnotation.Update> {

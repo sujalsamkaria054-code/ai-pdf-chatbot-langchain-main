@@ -13,6 +13,7 @@ import {
   resolveDocument,
   retrieveDocuments,
   routeAfterGenerate,
+  routeAfterCheck,
   routeAfterPlanning,
   routeAfterResolution,
 } from './nodes.js';
@@ -32,7 +33,10 @@ const builder = new StateGraph(
   .addNode('recoverFromError', recoverFromError)
   .addNode('documentResolutionFallback', documentResolutionFallback)
   .addEdge(START, 'checkQueryType')
-  .addEdge('checkQueryType', 'resolveDocument')
+  .addConditionalEdges('checkQueryType', routeAfterCheck, [
+    'resolveDocument',
+    'detectIntent',
+  ])
   .addConditionalEdges('resolveDocument', routeAfterResolution, [
     'detectIntent',
     'documentResolutionFallback',

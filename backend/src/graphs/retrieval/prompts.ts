@@ -124,6 +124,10 @@ Examples of natural phrasing (non-exhaustive):
 - "make a proper business report" => report_only
 - "compare these months" => comparison
 - "what are the main findings?" => document_summary
+- "is document ke bare me bata" => document_summary
+- "report banao" => report_only
+- "chart dikha" => chart_only
+- "compare karo" => comparison
 
 Return valid JSON only:
 {{

@@ -128,6 +128,7 @@ describe('normalizeIntent', () => {
     expect(normalizeIntent('chart')).toBe('chart_only');
     expect(normalizeIntent('report')).toBe('report_only');
     expect(normalizeIntent('direct')).toBe('direct_answer');
+    expect(normalizeIntent('document_summary')).toBe('document_summary');
   });
 });
 

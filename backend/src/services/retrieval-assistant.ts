@@ -32,6 +32,38 @@ const preferencesResultSchema = z.object({
   preferences: userPreferencesSchema,
 });
 
+export function inferIntentFromQuery(
+  query: string,
+): z.infer<typeof agentIntentSchema> {
+  const text = query.toLowerCase();
+
+  if (/(compare|comparison|vs|versus|karo\b|mukab)/i.test(text)) {
+    return 'comparison';
+  }
+
+  if (
+    /(report with chart|report and chart|report aur chart|report\s*\+\s*chart)/i.test(
+      text,
+    )
+  ) {
+    return 'report_with_chart';
+  }
+
+  if (/(chart|graph|visual|dikha|plot)/i.test(text)) {
+    return 'chart_only';
+  }
+
+  if (/(report|insight|analysis|banao|do)/i.test(text)) {
+    return 'report_only';
+  }
+
+  if (/(document|doc|file|pdf|samjha|summary|summarize|bare me)/i.test(text)) {
+    return 'document_summary';
+  }
+
+  return 'unknown';
+}
+
 export async function classifyRoute(
   query: string,
   config: RunnableConfig,
@@ -67,7 +99,8 @@ export async function classifyIntent(
     logLabel: 'classifyIntent',
   });
 
-  return normalizeIntent(parsed.intent);
+  const normalized = normalizeIntent(parsed.intent);
+  return normalized === 'unknown' ? inferIntentFromQuery(query) : normalized;
 }
 
 export async function classifyPreferences(

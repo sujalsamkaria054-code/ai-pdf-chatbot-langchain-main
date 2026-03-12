@@ -33,7 +33,10 @@ describe('Prompt Templates', () => {
         'Do NOT rely on exact keyword matching',
       );
       expect(formattedPrompt.toString()).toContain(
-        '"show performance visually" => chart',
+        '"show performance visually" => chart_only',
+      );
+      expect(formattedPrompt.toString()).toContain(
+        '"is document ke bare me bata" => document_summary',
       );
     });
   });
