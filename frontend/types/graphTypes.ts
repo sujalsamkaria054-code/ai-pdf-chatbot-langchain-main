@@ -107,12 +107,7 @@ export type ResponseBlock =
     };
 
 export type StructuredAssistantResponse = {
-  kind:
-    | 'text_answer'
-    | 'report'
-    | 'chart_only'
-    | 'report_with_chart'
-    | 'not_found';
+  kind: 'text' | 'chart' | 'report' | 'mixed';
   title?: string;
   message?: string;
   blocks: ResponseBlock[];
